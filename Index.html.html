@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>FUT Trading Tracker</title>
+<style>
+:root{--bg:#10141a;--s:#1a212b;--s2:#242e3b;--tx:#e9eef5;--mu:#8995a6;--ac:#5aa9ff;--gn:#4fd18b;--rd:#ff6b6b;color-scheme:dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:640px;margin:0 auto;padding:14px 12px 100px}
+h1{font-size:1.25rem;margin:0 0 2px}
+h2{font-size:1.05rem;margin:22px 0 8px;color:var(--mu);font-weight:600}
+.date{color:var(--mu);margin:0 0 14px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grid.g3{grid-template-columns:1fr 1fr 1fr}
+.card{background:var(--s);border-radius:12px;padding:12px}
+.card b{display:block;font-size:1.35rem;margin-top:2px}
+.card span{color:var(--mu);font-size:.85rem}
+.big b{font-size:1.7rem}
+.pos{color:var(--gn)}.neg{color:var(--rd)}
+nav{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--s);border-top:1px solid var(--s2);padding-bottom:env(safe-area-inset-bottom,0px)}
+nav button{flex:1;background:none;border:0;color:var(--mu);padding:13px 2px;font:inherit;font-size:.82rem}
+nav button.on{color:var(--ac);font-weight:600;box-shadow:inset 0 2px 0 var(--ac)}
+.bar{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.btn{background:var(--ac);color:#06121f;border:0;border-radius:10px;padding:11px 14px;font:inherit;font-weight:600}
+.btn.alt{background:var(--s2);color:var(--tx)}
+.btn.ok{background:var(--gn);color:#04170d}
+.btn.del{background:none;color:var(--rd);padding:6px 0;font-weight:500}
+.row{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;background:var(--s);border-radius:12px;padding:10px;margin-bottom:8px}
+.row .r{grid-column:span 1}.row .n{grid-column:span 3}.row .q{grid-column:span 2}
+.row .ek,.row .vk,.row .pf,.row .c{grid-column:span 2}
+.row .sold{grid-column:span 4}
+input,select{width:100%;min-width:0;background:var(--s2);color:var(--tx);border:1px solid transparent;border-radius:8px;padding:9px 8px;font:inherit;font-size:.95rem}
+input:focus,select:focus,button:focus-visible{outline:2px solid var(--ac);outline-offset:1px}
+.pf{display:flex;align-items:center;justify-content:center;border-radius:8px;background:var(--bg);font-weight:600;font-size:.95rem}
+.lbl{color:var(--mu);font-size:.78rem}
+.item{background:var(--s);border-radius:12px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;gap:10px}
+.item small{color:var(--mu);display:block}
+.item .p{text-align:right;font-weight:700;white-space:nowrap}
+.scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.88rem}
+th,td{padding:9px 6px;text-align:right;border-bottom:1px solid var(--s2)}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--mu);font-weight:600;font-size:.78rem}
+tr.top td{background:#16281f}
+textarea{width:100%;height:120px;background:var(--s2);color:var(--tx);border:0;border-radius:8px;padding:8px;font:.75rem monospace}
+.empty{color:var(--mu);padding:24px 8px;text-align:center}
+#toast{position:fixed;left:50%;bottom:calc(76px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--tx);color:#0b1118;padding:9px 16px;border-radius:20px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .2s}
+#toast.show{opacity:1}
+</style>
+</head>
+<body>
+<main id="app"></main>
+<datalist id="dn"></datalist><datalist id="dr"></datalist>
+<div id="toast"></div>
+<nav id="nav"></nav>
+<script>
+var KEY='fut-tracker-v1';
+var RAR=['Gold','TOTW','TOTW Holo','Destiny to Glory','Destiny to Glory Holo','Future Stars','Future Stars Holo','Hero','Hero Holo','Icon','Icon Holo'];
+var TABS=[['home','Übersicht'],['list','Listings'],['sales','Verkäufe'],['ana','Analyse'],['data','Daten']];
+var S={listings:[],sales:[],names:[],rarities:[],days:{}};
+var tab='home';
+function load(){try{var r=localStorage.getItem(KEY);if(r)S=Object.assign(S,JSON.parse(r))}catch(e){}}
+function save(show){try{localStorage.setItem(KEY,JSON.stringify(S));if(show)toast('Gespeichert')}catch(e){toast('Speichern nicht möglich')}}
+function toast(t){var el=document.getElementById('toast');el.textContent=t;el.className='show';clearTimeout(toast.t);toast.t=setTimeout(function(){el.className=''},1600)}
+function today(){return new Date().toLocaleDateString('sv-SE')}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;')}
+function fmt(n){return Math.round(n).toLocaleString('de-DE')}
+function profit(vk,ek){return vk>0?Math.floor(vk*0.95)-(ek||0):0}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
+function sum(a,f){return a.reduce(function(t,x){return t+f(x)},0)}
+function cls(n){return n>0?'pos':n<0?'neg':''}
+function refreshLists(){
+  document.getElementById('dn').innerHTML=S.names.map(function(n){return '<option value="'+esc(n)+'">'}).join('');
+  var all=RAR.concat(S.rarities.filter(function(r){return RAR.indexOf(r)<0}));
+  document.getElementById('dr').innerHTML=all.map(function(n){return '<option value="'+esc(n)+'">'}).join('');
+}
+function addDay(n){var d=today();S.days[d]=(S.days[d]||0)+n}
+function cardName(x){return x.rating+' '+(x.name||'?')+' · '+(x.rarity||'?')}
+
+function renderNav(){
+  document.getElementById('nav').innerHTML=TABS.map(function(t){return '<button data-t="'+t[0]+'" class="'+(tab===t[0]?'on':'')+'">'+t[1]+'</button>'}).join('');
+}
+function render(){
+  renderNav();refreshLists();
+  var el=document.getElementById('app');
+  el.innerHTML=({home:vHome,list:vList,sales:vSales,ana:vAna,data:vData})[tab]();
+  window.scrollTo(0,0);
+}
+function vHome(){
+  var d=today(),ts=S.sales.filter(function(s){return s.date===d});
+  var tp=sum(ts,function(s){return s.profit}),gp=sum(S.sales,function(s){return s.profit});
+  var gl=sum(Object.keys(S.days),function(k){return S.days[k]});
+  var ds=new Date().toLocaleDateString('de-DE',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  return '<h1>FUT Trading Tracker</h1><p class="date">'+ds+'</p>'
+  +'<h2>Heute</h2><div class="grid"><div class="card big" style="grid-column:span 2"><span>Gewinn heute</span><b class="'+cls(tp)+'">'+fmt(tp)+' Coins</b></div>'
+  +'<div class="card"><span>Karten verkauft</span><b>'+ts.length+'</b></div><div class="card"><span>Listings gemacht</span><b>'+(S.days[d]||0)+'</b></div></div>'
+  +'<h2>Gesamt</h2><div class="grid"><div class="card big" style="grid-column:span 2"><span>Gesamtgewinn</span><b class="'+cls(gp)+'">'+fmt(gp)+' Coins</b></div>'
+  +'<div class="card"><span>Kartenverkäufe</span><b>'+S.sales.length+'</b></div><div class="card"><span>Listings gesamt</span><b>'+fmt(gl)+'</b></div></div>';
+}
+function rowHtml(l){
+  var o='';for(var i=80;i<=99;i++)o+='<option'+(l.rating==i?' selected':'')+'>'+i+'</option>';
+  var p=profit(l.vk,l.ek);
+  return '<div class="row" data-id="'+l.id+'"><select class="r" aria-label="Rating">'+o+'</select>'
+  +'<input class="n" list="dn" placeholder="Spielername" value="'+esc(l.name)+'" autocomplete="off">'
+  +'<input class="q" list="dr" placeholder="Seltenheit" value="'+esc(l.rarity)+'" autocomplete="off">'
+  +'<input class="ek" inputmode="numeric" placeholder="Einkauf (EK)" value="'+(l.ek||'')+'">'
+  +'<input class="vk" inputmode="numeric" placeholder="Verkauf (VK)" value="'+(l.vk||'')+'">'
+  +'<div class="pf '+cls(p)+'">'+(l.vk>0?fmt(p):'Gewinn –')+'</div>'
+  +'<input class="c" type="number" min="1" inputmode="numeric" aria-label="Anzahl Listings" value="'+l.count+'">'
+  +'<button class="btn ok sold">Verkauft</button></div>';
+}
+function vList(){
+  return '<h1>Listings</h1><p class="date">'+S.listings.length+' Karten auf der Transferliste · Feld ganz links unten: Anzahl Listings</p>'
+  +'<div class="bar"><button class="btn" id="add">Neue Karte</button><button class="btn alt" id="relist">Alle erneut anbieten</button></div>'
+  +(S.listings.length?S.listings.map(rowHtml).join(''):'<div class="empty">Noch keine Karten. Lege deine erste Karte an.</div>');
+}
+function vSales(){
+  var a=S.sales.slice().reverse();
+  return '<h1>Verkäufe</h1><p class="date">'+S.sales.length+' verkaufte Karten</p>'
+  +(a.length?a.map(function(s){return '<div class="item"><div>'+esc(cardName(s))+'<small>'+s.date.split('-').reverse().join('.')+' · EK '+fmt(s.ek)+' · VK '+fmt(s.vk)+' · '+s.count+' Listings</small><button class="btn del" data-del="'+s.id+'">Entfernen</button></div><div class="p '+cls(s.profit)+'">'+fmt(s.profit)+'</div></div>'}).join(''):'<div class="empty">Noch nichts verkauft.</div>');
+}
+function vAna(){
+  var g={};
+  S.sales.forEach(function(s){var k=cardName(s);(g[k]=g[k]||{k:k,n:0,c:0,p:0});g[k].n++;g[k].c+=s.count;g[k].p+=s.profit});
+  var a=Object.keys(g).map(function(k){var x=g[k];x.apl=x.p/Math.max(x.c,1);return x}).sort(function(a,b){return b.apl-a.apl});
+  if(!a.length)return '<h1>Analyse</h1><div class="empty">Sobald du Karten verkauft hast, siehst du hier, welche sich am meisten lohnen.</div>';
+  return '<h1>Analyse</h1><p class="date">Sortiert nach Gewinn pro Listing. Das ist die Zahl, an der du Karten vergleichst.</p><div class="scroll"><table><tr><th>Karte</th><th>Verk.</th><th>Ø Listings</th><th>Ø Gewinn</th><th>Gewinn/Listing</th></tr>'
+  +a.map(function(x,i){return '<tr class="'+(i===0?'top':'')+'"><td>'+esc(x.k)+'</td><td>'+x.n+'</td><td>'+(x.c/x.n).toFixed(1).replace('.',',')+'</td><td>'+fmt(x.p/x.n)+'</td><td class="'+cls(x.apl)+'"><b>'+fmt(x.apl)+'</b></td></tr>'}).join('')+'</table></div>';
+}
+function vData(){
+  return '<h1>Daten</h1><p class="date">Alles wird zusätzlich automatisch auf diesem Gerät gespeichert.</p>'
+  +'<button class="btn" id="save">Jetzt speichern</button>'
+  +'<h2>Backup</h2><textarea id="bk" placeholder="Backup-Text hier"></textarea><div class="bar" style="margin-top:8px"><button class="btn alt" id="exp">Backup erzeugen</button><button class="btn alt" id="imp">Backup einlesen</button></div>';
+}
+
+document.getElementById('nav').addEventListener('click',function(e){var t=e.target.dataset.t;if(t){tab=t;render()}});
+var app=document.getElementById('app');
+function find(e){var r=e.target.closest('.row');return r?S.listings.filter(function(l){return l.id===r.dataset.id})[0]:null}
+function num(v){return parseInt(String(v).replace(/\D/g,''),10)||0}
+app.addEventListener('input',function(e){
+  var l=find(e);if(!l)return;var c=e.target.classList,r=e.target.closest('.row');
+  if(c.contains('r'))l.rating=+e.target.value;
+  else if(c.contains('n'))l.name=e.target.value;
+  else if(c.contains('q'))l.rarity=e.target.value;
+  else if(c.contains('ek'))l.ek=num(e.target.value);
+  else if(c.contains('vk'))l.vk=num(e.target.value);
+  else if(c.contains('c'))l.count=Math.max(1,num(e.target.value));
+  var p=profit(l.vk,l.ek),pf=r.querySelector('.pf');pf.textContent=l.vk>0?fmt(p):'Gewinn –';pf.className='pf '+cls(p);
+});
+app.addEventListener('change',function(e){
+  var l=find(e);if(!l)return;
+  var n=(l.name||'').trim(),q=(l.rarity||'').trim();
+  if(n&&S.names.indexOf(n)<0)S.names.push(n);
+  if(q&&RAR.indexOf(q)<0&&S.rarities.indexOf(q)<0)S.rarities.push(q);
+  l.name=n;l.rarity=q;refreshLists();save();
+});
+app.addEventListener('click',function(e){
+  var t=e.target,id=t.id;
+  if(id==='add'){S.listings.unshift({id:uid(),rating:85,name:'',rarity:'',ek:0,vk:0,count:1});addDay(1);save();render()}
+  else if(id==='relist'){if(!S.listings.length)return;S.listings.forEach(function(l){l.count++});addDay(S.listings.length);save();render();toast('+1 Listing für alle Karten')}
+  else if(t.classList.contains('sold')){
+    var l=find(e);if(!l)return;
+    if(!(l.vk>0)){toast('Bitte erst den Verkaufspreis eintragen');return}
+    S.sales.push({id:uid(),date:today(),rating:l.rating,name:l.name,rarity:l.rarity,ek:l.ek,vk:l.vk,profit:profit(l.vk,l.ek),count:l.count});
+    S.listings=S.listings.filter(function(x){return x.id!==l.id});save();render();toast('Verkauft')}
+  else if(t.dataset.del){S.sales=S.sales.filter(function(s){return s.id!==t.dataset.del});save();render()}
+  else if(id==='save')save(true);
+  else if(id==='exp')document.getElementById('bk').value=JSON.stringify(S);
+  else if(id==='imp'){try{var d=JSON.parse(document.getElementById('bk').value);if(!d.listings||!d.sales)throw 0;S=Object.assign(S,d);save();render();toast('Backup geladen')}catch(x){toast('Backup-Text ungültig')}}
+});
+load();render();
+</script>
+</body>
+</html>
